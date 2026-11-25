@@ -234,6 +234,7 @@ public class LanderMockService {
 
     public List<MockProcessInstance> listInstances() {
         return processStore.values().stream()
+                .map(this::snapshotInstance)
                 .sorted(Comparator.comparing(MockProcessInstance::getCreatedAt).reversed())
                 .toList();
     }
@@ -243,26 +244,51 @@ public class LanderMockService {
         if (instance == null) {
             throw new BizException(404, "Process instance not found: " + piid);
         }
-        long nowMs = System.currentTimeMillis();
-        List<TaskObject> activeTasks = instance.getTasks().stream()
-                .filter(t -> t.getState() == TASK_STATE_READY)
-                .toList();
-        List<TaskObject> doneTasks = instance.getTasks().stream()
-                .filter(t -> t.getState() != TASK_STATE_READY)
-                .toList();
-        boolean endFlow = instance.getState() == PROCESS_STATE_END || instance.getState() == PROCESS_STATE_STOP;
-        CallbackPayload payload = buildCallbackPayload(
-                instance,
-                "_BOF",
-                instance.getCurrentNodeId(),
-                instance.getCurrentNodeDisplayName(),
-                doneTasks.isEmpty(),
-                endFlow,
-                nowMs,
-                activeTasks,
-                doneTasks
-        );
+        CallbackPayload payload;
+        synchronized (instance) {
+            long nowMs = System.currentTimeMillis();
+            List<TaskObject> activeTasks = instance.getTasks().stream()
+                    .filter(t -> t.getState() == TASK_STATE_READY)
+                    .toList();
+            List<TaskObject> doneTasks = instance.getTasks().stream()
+                    .filter(t -> t.getState() != TASK_STATE_READY)
+                    .toList();
+            boolean endFlow = instance.getState() == PROCESS_STATE_END || instance.getState() == PROCESS_STATE_STOP;
+            payload = buildCallbackPayload(
+                    instance,
+                    "_BOF",
+                    instance.getCurrentNodeId(),
+                    instance.getCurrentNodeDisplayName(),
+                    doneTasks.isEmpty(),
+                    endFlow,
+                    nowMs,
+                    activeTasks,
+                    doneTasks
+            );
+        }
         return callbackService.triggerSync(payload);
+    }
+
+    private MockProcessInstance snapshotInstance(MockProcessInstance source) {
+        // 序列化前在实例锁内复制集合，避免与并发 completeTask 产生 CME
+        synchronized (source) {
+            MockProcessInstance copy = new MockProcessInstance();
+            copy.setPiid(source.getPiid());
+            copy.setApplyId(source.getApplyId());
+            copy.setBaseSchema(source.getBaseSchema());
+            copy.setTitle(source.getTitle());
+            copy.setExternalFormUrl(source.getExternalFormUrl());
+            copy.setState(source.getState());
+            copy.setCurrentNodeId(source.getCurrentNodeId());
+            copy.setCurrentNodeDisplayName(source.getCurrentNodeDisplayName());
+            copy.setTerminateReason(source.getTerminateReason());
+            copy.setCreator(source.getCreator());
+            copy.setExtendData(new HashMap<>(source.getExtendData()));
+            copy.setCreatedAt(source.getCreatedAt());
+            copy.setUpdatedAt(source.getUpdatedAt());
+            copy.setTasks(new ArrayList<>(source.getTasks()));
+            return copy;
+        }
     }
 
     private void createNextTasks(

@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -153,6 +154,13 @@ public class ScmMockService {
                     order.orderType(), order.taxationCd(), order.flowNo(), order.buyerName(),
                     "8", order.poLines(), order.createdAt()
             ));
+        } catch (RestClientResponseException ex) {
+            log.warn("SCM order callback rejected, billNo={}, url={}, status={}",
+                    order.billNo(), targetUrl, ex.getStatusCode().value());
+            result.put("httpStatus", ex.getStatusCode().value());
+            result.put("success", false);
+            result.put("responseBody", ex.getResponseBodyAsString());
+            result.put("errorMessage", ex.getMessage());
         } catch (Exception ex) {
             log.warn("SCM order callback failed, billNo={}, url={}, err={}", order.billNo(), targetUrl, ex.getMessage());
             result.put("httpStatus", 0);

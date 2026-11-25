@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -155,6 +156,11 @@ public class LanderCallbackService {
             status = resp.getStatusCode().value();
             responseBody = resp.getBody();
             success = resp.getStatusCode().is2xxSuccessful();
+        } catch (RestClientResponseException ex) {
+            status = ex.getStatusCode().value();
+            responseBody = ex.getResponseBodyAsString();
+            errorMessage = ex.getMessage();
+            log.warn("Lander callback rejected, piid={}, url={}, status={}", piid, targetUrl, status);
         } catch (Exception ex) {
             errorMessage = ex.getMessage();
             log.warn("Lander callback failed, piid={}, url={}, err={}", piid, targetUrl, ex.getMessage());

@@ -19,6 +19,7 @@ public class ScmDatasetGenerator {
     private static final int TOTAL_RECORDS = 10_000;
     private static final LocalDateTime BASE_TIME = LocalDateTime.of(2025, 1, 1, 0, 0, 0);
     private static final long STEP_MINUTES = 60L;
+    private static final long STEP_SECONDS = STEP_MINUTES * 60L;
     private static final String[] REGIONS = {"NORTH", "EAST", "SOUTH", "WEST", "CENTRAL"};
 
     public PageResult<ScmContractRecord> queryContracts(
@@ -33,26 +34,24 @@ public class ScmDatasetGenerator {
         return slice(range, pageNo, pageSize, this::buildVendor);
     }
 
-    // 记录按更新时间单调递增分布，直接 O(1) 定位区间并按页生成，避免常驻 10,000 对象占用堆内存
+    // 记录按更新时间单调递增分布，按秒精确 O(1) 定位闭区间并按页生成
     private IndexRange computeIndexRange(LocalDateTime from, LocalDateTime to) {
         int start = 0;
         int end = TOTAL_RECORDS - 1;
-        if (from != null) {
-            long diffMinutes = Duration.between(BASE_TIME, from).toMinutes();
-            if (diffMinutes > 0) {
-                long idx = (diffMinutes + STEP_MINUTES - 1) / STEP_MINUTES;
-                if (idx >= TOTAL_RECORDS) {
-                    return new IndexRange(1, 0);
-                }
-                start = (int) idx;
-            }
-        }
-        if (to != null) {
-            long diffMinutes = Duration.between(BASE_TIME, to).toMinutes();
-            if (diffMinutes < 0) {
+        if (from != null && from.isAfter(BASE_TIME)) {
+            Duration diff = Duration.between(BASE_TIME, from);
+            long ceilSeconds = diff.getNano() > 0 ? diff.getSeconds() + 1 : diff.getSeconds();
+            long idx = (ceilSeconds + STEP_SECONDS - 1) / STEP_SECONDS;
+            if (idx >= TOTAL_RECORDS) {
                 return new IndexRange(1, 0);
             }
-            long idx = diffMinutes / STEP_MINUTES;
+            start = (int) idx;
+        }
+        if (to != null) {
+            if (to.isBefore(BASE_TIME)) {
+                return new IndexRange(1, 0);
+            }
+            long idx = Duration.between(BASE_TIME, to).getSeconds() / STEP_SECONDS;
             end = (int) Math.min(TOTAL_RECORDS - 1, idx);
         }
         return new IndexRange(start, end);

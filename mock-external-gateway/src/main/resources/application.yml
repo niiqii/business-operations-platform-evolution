@@ -27,3 +27,7 @@ mock:
   http:
     connect-timeout-ms: 3000
     read-timeout-ms: 5000
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{X-Trace-Id}] %logger{36} - %msg%n"
