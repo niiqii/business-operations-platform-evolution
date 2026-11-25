@@ -1,0 +1,29 @@
+server:
+  port: 18080
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+spring:
+  application:
+    name: mock-external-gateway
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+
+mock:
+  lander:
+    auth:
+      username: lander_mock
+      password: lander_mock_pass
+    callback:
+      default-url: http://localhost:8081/wfasynch/rs/service/runtime/process/changeState
+      hmac-secret: bop-lander-callback-secret
+  scm:
+    callback:
+      default-url: http://localhost:8084/scm/order/callback
+  http:
+    connect-timeout-ms: 3000
+    read-timeout-ms: 5000

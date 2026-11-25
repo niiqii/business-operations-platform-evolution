@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BOP Mock External Gateway - Chaos Console</title>
+    <style>
+        :root {
+            --bg: #f4f6f9;
+            --card: #ffffff;
+            --border: #dce1e8;
+            --primary: #1f5eff;
+            --danger: #d93025;
+            --text: #1f2937;
+            --muted: #6b7280;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 14px;
+        }
+        h1 { margin: 0 0 16px; font-size: 20px; }
+        h2 { margin: 0 0 12px; font-size: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 16px; }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 16px; }
+        .full-row { grid-column: 1 / -1; }
+        label { display: flex; flex-direction: column; gap: 4px; font-weight: 500; }
+        label.inline { flex-direction: row; align-items: center; gap: 8px; font-weight: 400; }
+        input[type="text"], input[type="number"] {
+            padding: 6px 8px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 13px;
+            width: 100%;
+        }
+        button {
+            padding: 6px 12px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+        button.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+        button:hover { opacity: 0.9; }
+        .actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+        .status-msg { color: var(--muted); font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+        th { background: #f9fafb; font-weight: 600; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; }
+        .badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 11px; }
+        .badge-ok { background: #e6f4ea; color: #137333; }
+        .badge-fail { background: #fce8e6; color: #c5221f; }
+        .table-wrap { max-height: 300px; overflow: auto; }
+    </style>
+</head>
+<body>
+    <h1>Mock External Gateway - 故障注入与观测台</h1>
+
+    <div class="card">
+        <h2>
+            <span>动态故障配置与回调目标</span>
+            <button onclick="loadConfig()">刷新配置</button>
+        </h2>
+        <div class="form-grid">
+            <label class="full-row">
+                Lander Callback URL
+                <input type="text" id="landerCallbackUrl">
+            </label>
+            <label class="full-row">
+                SCM Callback URL
+                <input type="text" id="scmCallbackUrl">
+            </label>
+            <label>
+                landerDelayMs (ms)
+                <input type="number" id="landerDelayMs" min="0">
+            </label>
+            <label>
+                landerFailRate (0.0 - 1.0)
+                <input type="number" id="landerFailRate" min="0" max="1" step="0.1">
+            </label>
+            <label>
+                callbackDuplicateCount
+                <input type="number" id="callbackDuplicateCount" min="1">
+            </label>
+            <label>
+                smsDelayMs (ms)
+                <input type="number" id="smsDelayMs" min="0">
+            </label>
+            <label class="inline"><input type="checkbox" id="landerDuplicateTaskError"> landerDuplicateTaskError (返回 TASK_ALREADY_COMPLETED)</label>
+            <label class="inline"><input type="checkbox" id="landerReturnNullTask"> landerReturnNullTask (getTask 返回空)</label>
+            <label class="inline"><input type="checkbox" id="callbackOutOfOrder"> callbackOutOfOrder (推送旧时间戳乱序回调)</label>
+            <label class="inline"><input type="checkbox" id="smsFailEnabled"> smsFailEnabled (通知接口返回 500)</label>
+            <label class="inline"><input type="checkbox" id="scmPartialFail"> scmPartialFail (请款返回 ERROR_FLAG=3)</label>
+        </div>
+        <div class="actions">
+            <button class="primary" onclick="saveConfig()">保存并立即生效</button>
+            <span id="configStatus" class="status-msg"></span>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>
+                <span>内存 Lander 流程实例</span>
+                <button onclick="loadInstances()">刷新</button>
+            </h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>PIID / ApplyId</th><th>Schema / 节点</th><th>状态 / 任务数</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="instancesBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>
+                <span>内存 SCM 订单</span>
+                <button onclick="loadScmOrders()">刷新</button>
+            </h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>BillNo / BillNoBop</th><th>合同号</th><th>Ref3</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="scmOrdersBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>
+            <span>近期 Lander 回调日志</span>
+            <button onclick="loadCallbacks()">刷新</button>
+        </h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr><th>时间</th><th>PIID</th><th>目标地址</th><th>ModifiedTime</th><th>结果</th><th>操作</th></tr>
+                </thead>
+                <tbody id="callbacksBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>
+            <span>近期通知通道日志</span>
+            <div>
+                <button onclick="loadNotifies()">刷新</button>
+                <button class="danger" onclick="clearNotifies()">清空记录</button>
+            </div>
+        </h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr><th>时间</th><th>通道</th><th>接收人</th><th>标题 / 内容</th><th>状态</th></tr>
+                </thead>
+                <tbody id="notifiesBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        async function api(url, options) {
+            const resp = await fetch(url, options);
+            const text = await resp.text();
+            try { return JSON.parse(text); } catch { return { code: resp.status, message: text }; }
+        }
+
+        function esc(str) {
+            if (str === null || str === undefined) return '';
+            return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        async function loadConfig() {
+            const res = await api('/mock/chaos/config');
+            if (res.code !== 0 || !res.data) return;
+            const c = res.data;
+            document.getElementById('landerCallbackUrl').value = c.landerCallbackUrl || '';
+            document.getElementById('scmCallbackUrl').value = c.scmCallbackUrl || '';
+            document.getElementById('landerDelayMs').value = c.landerDelayMs;
+            document.getElementById('landerFailRate').value = c.landerFailRate;
+            document.getElementById('callbackDuplicateCount').value = c.callbackDuplicateCount;
+            document.getElementById('smsDelayMs').value = c.smsDelayMs;
+            document.getElementById('landerDuplicateTaskError').checked = !!c.landerDuplicateTaskError;
+            document.getElementById('landerReturnNullTask').checked = !!c.landerReturnNullTask;
+            document.getElementById('callbackOutOfOrder').checked = !!c.callbackOutOfOrder;
+            document.getElementById('smsFailEnabled').checked = !!c.smsFailEnabled;
+            document.getElementById('scmPartialFail').checked = !!c.scmPartialFail;
+        }
+
+        async function saveConfig() {
+            const payload = {
+                landerCallbackUrl: document.getElementById('landerCallbackUrl').value,
+                scmCallbackUrl: document.getElementById('scmCallbackUrl').value,
+                landerDelayMs: Number(document.getElementById('landerDelayMs').value || 0),
+                landerFailRate: Number(document.getElementById('landerFailRate').value || 0),
+                callbackDuplicateCount: Number(document.getElementById('callbackDuplicateCount').value || 1),
+                smsDelayMs: Number(document.getElementById('smsDelayMs').value || 0),
+                landerDuplicateTaskError: document.getElementById('landerDuplicateTaskError').checked,
+                landerReturnNullTask: document.getElementById('landerReturnNullTask').checked,
+                callbackOutOfOrder: document.getElementById('callbackOutOfOrder').checked,
+                smsFailEnabled: document.getElementById('smsFailEnabled').checked,
+                scmPartialFail: document.getElementById('scmPartialFail').checked
+            };
+            const res = await api('/mock/chaos/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            document.getElementById('configStatus').textContent = res.code === 0
+                ? '已保存 (' + new Date().toLocaleTimeString('zh-CN', { hour12: false }) + ')'
+                : '保存失败: ' + res.message;
+        }
+
+        async function loadInstances() {
+            const res = await api('/mock/lander/instances');
+            const rows = (res.data || []).map(p => `
+                <tr>
+                    <td class="mono">${esc(p.piid)}<br><span class="status-msg">${esc(p.applyId)}</span></td>
+                    <td>${esc(p.baseSchema)}<br><span class="status-msg">${esc(p.currentNodeId)} (${esc(p.currentNodeDisplayName)})</span></td>
+                    <td>state=${esc(p.state)}<br>tasks=${(p.tasks || []).length}</td>
+                    <td><button onclick="triggerLanderCallback('${esc(p.piid)}')">推送回调</button></td>
+                </tr>
+            `).join('');
+            document.getElementById('instancesBody').innerHTML = rows || '<tr><td colspan="4" class="status-msg">暂无实例</td></tr>';
+        }
+
+        async function triggerLanderCallback(piid) {
+            await api('/mock/lander/callback/trigger/' + encodeURIComponent(piid), { method: 'POST' });
+            loadCallbacks();
+        }
+
+        async function loadCallbacks() {
+            const res = await api('/mock/lander/callbacks?limit=30');
+            const rows = (res.data || []).map(l => `
+                <tr>
+                    <td>${esc(l.createdAt)}</td>
+                    <td class="mono">${esc(l.piid)}</td>
+                    <td class="mono">${esc(l.targetUrl)}</td>
+                    <td class="mono">${esc(l.modifiedTime)}</td>
+                    <td>
+                        <span class="badge ${l.success ? 'badge-ok' : 'badge-fail'}">${l.success ? 'OK ' + l.httpStatus : 'ERR ' + l.httpStatus}</span>
+                        <span class="status-msg">${esc(l.durationMs)}ms</span>
+                        ${l.errorMessage ? '<div class="status-msg">' + esc(l.errorMessage) + '</div>' : ''}
+                    </td>
+                    <td><button onclick="replayCallback('${esc(l.logId)}')">重放</button></td>
+                </tr>
+            `).join('');
+            document.getElementById('callbacksBody').innerHTML = rows || '<tr><td colspan="6" class="status-msg">暂无回调日志</td></tr>';
+        }
+
+        async function replayCallback(logId) {
+            await api('/mock/lander/callback/replay/' + encodeURIComponent(logId), { method: 'POST' });
+            loadCallbacks();
+        }
+
+        async function loadScmOrders() {
+            const res = await api('/mock/scm/orders');
+            const rows = (res.data || []).map(o => `
+                <tr>
+                    <td class="mono">${esc(o.billNo)}<br><span class="status-msg">${esc(o.billNoBop)}</span></td>
+                    <td class="mono">${esc(o.contractNo)}</td>
+                    <td>${esc(o.reference3)}</td>
+                    <td><button onclick="triggerScmCallback('${esc(o.billNo)}')">推送下达(ref3=8)</button></td>
+                </tr>
+            `).join('');
+            document.getElementById('scmOrdersBody').innerHTML = rows || '<tr><td colspan="4" class="status-msg">暂无订单</td></tr>';
+        }
+
+        async function triggerScmCallback(billNo) {
+            await api('/mock/scm/order/callback/' + encodeURIComponent(billNo), { method: 'POST' });
+            loadScmOrders();
+        }
+
+        async function loadNotifies() {
+            const res = await api('/mock/notify/records?limit=50');
+            const rows = (res.data || []).map(n => `
+                <tr>
+                    <td>${esc(n.createdAt)}</td>
+                    <td>${esc(n.channel)}</td>
+                    <td class="mono">${esc(n.recipient)}</td>
+                    <td><strong>${esc(n.title)}</strong><div>${esc(n.content)}</div></td>
+                    <td><span class="badge ${n.status === 'SUCCESS' ? 'badge-ok' : 'badge-fail'}">${esc(n.status)}</span></td>
+                </tr>
+            `).join('');
+            document.getElementById('notifiesBody').innerHTML = rows || '<tr><td colspan="5" class="status-msg">暂无通知记录</td></tr>';
+        }
+
+        async function clearNotifies() {
+            await api('/mock/notify/records', { method: 'DELETE' });
+            loadNotifies();
+        }
+
+        function refreshAll() {
+            loadConfig();
+            loadInstances();
+            loadCallbacks();
+            loadScmOrders();
+            loadNotifies();
+        }
+
+        refreshAll();
+    </script>
+</body>
+</html>
