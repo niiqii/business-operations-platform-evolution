@@ -1,0 +1,65 @@
+server:
+  port: 8081
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+spring:
+  application:
+    name: workorder-service
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/bop_workorder?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:bop_root_123456}
+    hikari:
+      pool-name: workorder-hikari
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 3000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  sql:
+    init:
+      mode: never
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+        enabled: ${NACOS_ENABLED:true}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    banner: false
+
+bop:
+  external:
+    lander-base-url: ${LANDER_BASE_URL:http://127.0.0.1:18080}
+    lander-username: ${LANDER_USERNAME:lander_mock}
+    lander-password: ${LANDER_PASSWORD:lander_mock_pass}
+    notify-base-url: ${NOTIFY_BASE_URL:http://127.0.0.1:18080}
+    connect-timeout-ms: 3000
+    read-timeout-ms: 8000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{X-Trace-Id}] %logger{36} - %msg%n"
